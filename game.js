@@ -1,5 +1,3 @@
-// game.js
-
 // Canvas setup
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -14,13 +12,14 @@ let grid = [];
 let stack = [];
 let obstacles = [];
 let lifeItems = [];
+let score = 0; // Add score variable
 
 // Player properties
 let player = {
     x: 0,
     y: 0,
     size: CELL_SIZE * 0.6,
-    lives: 5,
+    lives: 2,
     maxLives: 5,
 };
 
@@ -152,6 +151,14 @@ function drawMaze() {
             cell.draw();
         }
     }
+
+    // Draw "Start" text at the beginning of the maze
+    ctx.fillStyle = 'black';
+    ctx.font = '16px Arial';
+    ctx.fillText('A', CELL_SIZE * 0.2, CELL_SIZE * 0.8);
+
+    // Draw "End" text at the end of the maze
+    ctx.fillText('END', (COLS - 1) * CELL_SIZE + CELL_SIZE * 0.2, (ROWS - 1) * CELL_SIZE + CELL_SIZE * 0.8);
 }
 
 // Draw the player
@@ -187,7 +194,9 @@ function movePlayer(e) {
     }
 
     if (moved) {
+        score += 5; // Add 5 points per movement
         checkCollisions();
+        updateHUD();
         render();
     }
 }
@@ -222,7 +231,7 @@ function getRandomEmptyCell() {
         (x === COLS - 1 && y === ROWS - 1) || // Avoid ending position
         obstacles.some(o => o.x === x && o.y === y) ||
         lifeItems.some(l => l.x === x && l.y === y)
-        );
+    );
     return { x, y };
 }
 
@@ -271,6 +280,7 @@ function checkCollisions() {
         if (player.x === obstacles[i].x && player.y === obstacles[i].y) {
             obstacles.splice(i, 1); // Remove the obstacle
             player.lives--;
+            score -= 50; // Deduct 50 points when touching a red ball
             updateHUD();
             if (player.lives <= 0) {
                 setTimeout(() => {
@@ -288,6 +298,9 @@ function checkCollisions() {
             lifeItems.splice(i, 1); // Remove the life item
             if (player.lives < player.maxLives) {
                 player.lives++;
+                if (player.lives > 3) {
+                    score += 25; // Add 25 points after the third life
+                }
                 updateHUD();
             }
             break;
@@ -306,6 +319,7 @@ function checkCollisions() {
 // Update the HUD
 function updateHUD() {
     document.getElementById('lives').textContent = `Lives: ${player.lives}`;
+    document.getElementById('score').textContent = `Score: ${score}`; // Update score display
 }
 
 // Reset the game
@@ -320,6 +334,7 @@ function resetGame() {
     stack = [];
     obstacles = [];
     lifeItems = [];
+    score = 0; // Reset score
 
     initializeGame();
 }
