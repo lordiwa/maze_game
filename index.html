@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <title>Procedural Maze Game</title>
-  <link rel="stylesheet" href="styles.css">
   <style>
     /* Inline styles (optional if using styles.css) */
     body {
@@ -14,29 +14,534 @@
       margin: 0;
       padding: 0;
     }
+
     h1 {
       margin-top: 20px;
+      font-size: 5rem;
+      font-family: "Space Mono", monospace;
     }
+
     #gameCanvas {
       border: 2px solid black;
       background-color: #ffffff;
     }
+
     #hud {
-      margin-top: 10px;
-      font-size: 18px;
+      display: flex;
+      margin-top: 1rem;
+      gap: 4rem;
+      justify-content: space-between;
     }
-    #hud span {
-      margin: 0 10px;
+
+    #hud h1,
+    span {
+      font-size: 2rem;
     }
   </style>
 </head>
+
 <body>
-<h1>Maze Game</h1>
-<canvas id="gameCanvas" width="600" height="600"></canvas>
-<div id="hud">
-  <span id="lives">Lives: 5</span>
-  <span id="score">Score: 0</span>
-</div>
-<script src="game.js"></script>
+  <h1>Maze Game</h1>
+  <canvas id="gameCanvas" width="600" height="600"></canvas>
+  <div id="hud">
+    <h2>
+      Lives:
+      <span id="lives">5</span>
+    </h2>
+    <h2>
+      Score:
+      <span id="score">0</span>
+    </h2>
+  </div>
+  <script>
+    (function () {
+      //#region  OBSERVABLE PATTER
+      class Subject {
+        constructor() {
+          this.observers = {}; // Object to hold observers for each event
+        }
+
+        /**
+         * Subscribe an observer to a specific event
+         * @param {*} event Event Name
+         * @param {*} observer Callback
+         */
+        subscribe(event, observer) {
+          if (!this.observers[event]) {
+            this.observers[event] = []; // Initialize event array if it doesn't exist
+          }
+          this.observers[event].push(observer);
+        }
+
+        /**
+         * Unsubscribe an observer from a specific event
+         * @param {*} event Event Name
+         * @param {*} observer Callback
+         */
+        unsubscribe(event, observer) {
+          if (this.observers[event]) {
+            this.observers[event] = this.observers[event].filter(obs => obs !== observer);
+          }
+        }
+
+        /**
+         * Notify all observers of a specific event
+         * @param {*} event Event Name
+         * @param {*} data Event Data
+         * @returns 
+         */
+        notify(event, data) {
+          if (!this.observers[event]) return;
+          this.observers[event].forEach(observer => observer(data));
+        }
+      }
+      //#endregion
+
+      //#region SINGLETON
+      const GAME_EVENTS = {
+        WIN: 'win',
+        LOSE_LIVE: 'lose_live',
+        GAIN_LIVE: 'gain_live',
+        END_GAME: 'end_game'
+      };
+
+      const EventHandler = (function () {
+        let instance;
+        return {
+          getInstance: function () {
+            if (!instance) {
+              instance = new Subject();
+            }
+            return instance;
+          }
+        };
+      })();
+      //#endregion
+
+      //#region GAME
+
+      // Handle all the event in the game
+      EventHandler.getInstance().subscribe(GAME_EVENTS.WIN, onWinEvent);
+      EventHandler.getInstance().subscribe(GAME_EVENTS.END_GAME, onEndGameEvent);
+      EventHandler.getInstance().subscribe(GAME_EVENTS.GAIN_LIVE, onGainLiveEvent);
+      EventHandler.getInstance().subscribe(GAME_EVENTS.LOSE_LIVE, onLoseLiveEvent);
+
+      function onWinEvent() {
+        setTimeout(() => {
+          alert('You Win!');
+          resetGame();
+        }, 100);
+      }
+
+      function onGainLiveEvent() {
+        if (player.lives < player.maxLives) {
+          player.lives++;
+          if (player.lives > 3) {
+            score += 25; // Add 25 points after the third life
+          }
+          updateHUD();
+          animateText(document.getElementById('lives'));
+        }
+      }
+
+      function onLoseLiveEvent() {
+        player.lives--;
+        score = score - 50 <= 0 ? 0 : score - 50;
+        updateHUD();
+        animateText(document.getElementById('lives'));
+        if (player.lives <= 0) {
+          setTimeout(() => EventHandler.getInstance().notify(GAME_EVENTS.END_GAME), 400);
+        }
+      }
+
+      function onEndGameEvent() {
+        setTimeout(() => {
+          alert('Game Over!');
+          resetGame();
+        }, 100);
+      }
+
+      // Canvas setup
+      const canvas = document.getElementById('gameCanvas');
+      const ctx = canvas.getContext('2d');
+
+      // Game settings
+      const COLS = 10;
+      const ROWS = 10;
+      const CELL_SIZE = canvas.width / COLS;
+
+      // Game variables
+      let grid = [];
+      let stack = [];
+      let obstacles = [];
+      let lifeItems = [];
+      let score = 0; // Add score variable
+
+      // Player properties
+      let player = {
+        x: 0,
+        y: 0,
+        size: CELL_SIZE * 0.6,
+        lives: 2,
+        maxLives: 5,
+      };
+
+      // Direction vectors
+      const directions = [
+        { x: 0, y: -1 },  // Up
+        { x: 1, y: 0 },   // Right
+        { x: 0, y: 1 },   // Down
+        { x: -1, y: 0 }   // Left
+      ];
+
+      // Cell class
+      class Cell {
+        constructor(x, y) {
+          this.x = x;
+          this.y = y;
+          this.walls = [true, true, true, true]; // Top, Right, Bottom, Left
+          this.visited = false;
+        }
+
+        // Draw the cell walls
+        draw() {
+          const x = this.x * CELL_SIZE;
+          const y = this.y * CELL_SIZE;
+
+          ctx.strokeStyle = 'black';
+          ctx.lineWidth = 2;
+
+          if (this.walls[0]) {
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + CELL_SIZE, y);
+            ctx.stroke();
+          }
+          if (this.walls[1]) {
+            ctx.beginPath();
+            ctx.moveTo(x + CELL_SIZE, y);
+            ctx.lineTo(x + CELL_SIZE, y + CELL_SIZE);
+            ctx.stroke();
+          }
+          if (this.walls[2]) {
+            ctx.beginPath();
+            ctx.moveTo(x + CELL_SIZE, y + CELL_SIZE);
+            ctx.lineTo(x, y + CELL_SIZE);
+            ctx.stroke();
+          }
+          if (this.walls[3]) {
+            ctx.beginPath();
+            ctx.moveTo(x, y + CELL_SIZE);
+            ctx.lineTo(x, y);
+            ctx.stroke();
+          }
+        }
+
+        // Get unvisited neighbors
+        getUnvisitedNeighbors() {
+          let neighbors = [];
+
+          for (let dir of directions) {
+            let nx = this.x + dir.x;
+            let ny = this.y + dir.y;
+
+            if (nx >= 0 && ny >= 0 && nx < COLS && ny < ROWS) {
+              let neighbor = grid[ny][nx];
+              if (!neighbor.visited) {
+                neighbors.push({ neighbor, dir });
+              }
+            }
+          }
+          return neighbors;
+        }
+      }
+
+      // Initialize the grid
+      function initGrid() {
+        grid = [];
+        for (let y = 0; y < ROWS; y++) {
+          grid[y] = [];
+          for (let x = 0; x < COLS; x++) {
+            grid[y][x] = new Cell(x, y);
+          }
+        }
+      }
+
+      // Maze generation using Recursive Backtracking
+      function generateMaze() {
+        let current = grid[0][0];
+        current.visited = true;
+        stack.push(current);
+
+        while (stack.length > 0) {
+          current = stack.pop();
+          let neighbors = current.getUnvisitedNeighbors();
+
+          if (neighbors.length > 0) {
+            stack.push(current);
+
+            // Pick a random neighbor
+            let { neighbor, dir } = neighbors[Math.floor(Math.random() * neighbors.length)];
+            neighbor.visited = true;
+
+            // Remove walls between current and neighbor
+            if (dir.x === 0 && dir.y === -1) { // Up
+              current.walls[0] = false;
+              neighbor.walls[2] = false;
+            }
+            if (dir.x === 1 && dir.y === 0) { // Right
+              current.walls[1] = false;
+              neighbor.walls[3] = false;
+            }
+            if (dir.x === 0 && dir.y === 1) { // Down
+              current.walls[2] = false;
+              neighbor.walls[0] = false;
+            }
+            if (dir.x === -1 && dir.y === 0) { // Left
+              current.walls[3] = false;
+              neighbor.walls[1] = false;
+            }
+
+            stack.push(neighbor);
+          }
+        }
+      }
+
+      // Draw the maze
+      function drawMaze() {
+        for (let row of grid) {
+          for (let cell of row) {
+            cell.draw();
+          }
+        }
+
+        // Draw "Start" text at the beginning of the maze
+        ctx.fillStyle = 'black';
+        ctx.font = '16px Arial';
+        ctx.fillText('A', CELL_SIZE * 0.2, CELL_SIZE * 0.8);
+
+        // Draw "End" text at the end of the maze
+        ctx.fillText('END', (COLS - 1) * CELL_SIZE + CELL_SIZE * 0.2, (ROWS - 1) * CELL_SIZE + CELL_SIZE * 0.8);
+      }
+
+      // Draw the player
+      function drawPlayer() {
+        ctx.fillStyle = 'green';
+        ctx.fillRect(
+          player.x * CELL_SIZE + CELL_SIZE * 0.2,
+          player.y * CELL_SIZE + CELL_SIZE * 0.2,
+          player.size,
+          player.size
+        );
+      }
+
+      // Event listener for player movement
+      document.addEventListener('keydown', movePlayer);
+
+      function movePlayer(e) {
+        let cell = grid[player.y][player.x];
+        let moved = false;
+
+        if (e.key === 'ArrowUp' && !cell.walls[0] && player.y > 0) {
+          player.y--;
+          moved = true;
+        } else if (e.key === 'ArrowRight' && !cell.walls[1] && player.x < COLS - 1) {
+          player.x++;
+          moved = true;
+        } else if (e.key === 'ArrowDown' && !cell.walls[2] && player.y < ROWS - 1) {
+          player.y++;
+          moved = true;
+        } else if (e.key === 'ArrowLeft' && !cell.walls[3] && player.x > 0) {
+          player.x--;
+          moved = true;
+        }
+
+        if (moved) {
+          score += 5; // Add 5 points per movement
+          checkCollisions();
+          updateHUD();
+          render();
+        }
+      }
+
+      // Place obstacles and life items
+      function placeObstaclesAndLifeItems() {
+        // Ensure there is always one more obstacle than life items
+        const numLifeItems = 3; // You can adjust this number
+        const numObstacles = numLifeItems + 1;
+
+        // Place obstacles
+        for (let i = 0; i < numObstacles; i++) {
+          let pos = getRandomEmptyCell();
+          obstacles.push(pos);
+        }
+
+        // Place life items
+        for (let i = 0; i < numLifeItems; i++) {
+          let pos = getRandomEmptyCell();
+          lifeItems.push(pos);
+        }
+      }
+
+      // Get a random empty cell
+      function getRandomEmptyCell() {
+        let x, y;
+        do {
+          x = Math.floor(Math.random() * COLS);
+          y = Math.floor(Math.random() * ROWS);
+        } while (
+          (x === 0 && y === 0) || // Avoid starting position
+          (x === COLS - 1 && y === ROWS - 1) || // Avoid ending position
+          obstacles.some(o => o.x === x && o.y === y) ||
+          lifeItems.some(l => l.x === x && l.y === y)
+        );
+        return { x, y };
+      }
+
+      // Draw obstacles (red balls)
+      function drawObstacles() {
+        for (let obs of obstacles) {
+          ctx.fillStyle = 'red';
+          ctx.beginPath();
+          ctx.arc(
+            obs.x * CELL_SIZE + CELL_SIZE / 2,
+            obs.y * CELL_SIZE + CELL_SIZE / 2,
+            CELL_SIZE * 0.2,
+            0,
+            2 * Math.PI
+          );
+          ctx.fill();
+        }
+      }
+
+      // Draw life items (green triangles)
+      function drawLifeItems() {
+        for (let item of lifeItems) {
+          ctx.fillStyle = 'limegreen';
+          ctx.beginPath();
+          ctx.moveTo(
+            item.x * CELL_SIZE + CELL_SIZE / 2,
+            item.y * CELL_SIZE + CELL_SIZE * 0.3
+          );
+          ctx.lineTo(
+            item.x * CELL_SIZE + CELL_SIZE * 0.7,
+            item.y * CELL_SIZE + CELL_SIZE * 0.7
+          );
+          ctx.lineTo(
+            item.x * CELL_SIZE + CELL_SIZE * 0.3,
+            item.y * CELL_SIZE + CELL_SIZE * 0.7
+          );
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+
+      // Check for collisions
+      function checkCollisions() {
+        // Collision with obstacles
+        for (let i = 0; i < obstacles.length; i++) {
+          if (player.x === obstacles[i].x && player.y === obstacles[i].y) {
+            obstacles.splice(i, 1); // Remove the obstacle            
+            EventHandler.getInstance().notify(GAME_EVENTS.LOSE_LIVE);
+            break;
+          }
+        }
+
+        // Collision with life items
+        for (let i = 0; i < lifeItems.length; i++) {
+          if (player.x === lifeItems[i].x && player.y === lifeItems[i].y) {
+            lifeItems.splice(i, 1); // Remove the life item
+            EventHandler.getInstance().notify(GAME_EVENTS.GAIN_LIVE);
+            break;
+          }
+        }
+
+        // Check if reached the end
+        if (player.x === COLS - 1 && player.y === ROWS - 1) {
+          EventHandler.getInstance().notify(GAME_EVENTS.WIN);
+        }
+      }
+
+      // Reset the game
+      function resetGame() {
+        // Reset player position and lives
+        player = {
+          ...player,
+          x: 0,
+          y: 0,
+          lives: 2,
+        };
+
+        // Reset game variables
+        grid = [];
+        stack = [];
+        obstacles = [];
+        lifeItems = [];
+        score = 0; // Reset score
+
+        initializeGame();
+      }
+
+      // Render the game
+      function render() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawMaze();
+        drawObstacles();
+        drawLifeItems();
+        drawPlayer();
+      }
+
+      // Initialize the game
+      function initializeGame() {
+        initGrid();
+        generateMaze();
+        placeObstaclesAndLifeItems();
+        updateHUD();
+        render();
+      }
+      //#endregion
+
+      //#region UI
+      const MIN_NUMBER_ZEROS_LIVES = 2;
+      const MIN_NUMBER_ZEROS_SCORE = 4;
+      const ALL_NUMBERS = "0123456789";
+
+      function updateHUD() {
+        const formatLives = `${formatString(player.lives, MIN_NUMBER_ZEROS_LIVES)}`;
+        const livesEle = document.getElementById('lives');
+        livesEle.textContent = formatLives;
+        livesEle.dataset.lives = formatLives;
+
+        document.getElementById('score').textContent = `${formatString(score, MIN_NUMBER_ZEROS_SCORE)}`;
+        document.getElementById('score').dataset.score = score;
+      }
+
+      function formatString(value, minZeros) {
+        const zerosLength = minZeros - ('' + value).length;
+        return '0'.repeat(zerosLength) + value;
+      }
+
+      function animateText(element) {
+        const MAX_INTERACTION = 8;
+        let iterations = 0;
+        const timer = setInterval(() => {
+          const elementText = element.innerText.split('').map((num, index) => {
+            if ((MAX_INTERACTION - iterations) <= 0) {
+              return element.dataset.lives[index]
+            }
+            return ALL_NUMBERS[Math.floor(Math.random() * ALL_NUMBERS.length)];
+          }).join('');
+          iterations++;
+          element.innerText = elementText;
+          if (iterations > MAX_INTERACTION) clearInterval(timer);
+        }, 30);
+      }
+      //#endregion
+
+      // Start the game
+      initializeGame();
+    })();
+  </script>
 </body>
+
 </html>
