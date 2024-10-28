@@ -13,10 +13,11 @@
       font-family: Arial, sans-serif;
       margin: 0;
       padding: 0;
+      position: relative;
     }
 
     h1 {
-      margin-top: 20px;
+      margin: 1rem 0;
       font-size: 5rem;
       font-family: "Space Mono", monospace;
     }
@@ -37,6 +38,25 @@
     span {
       font-size: 2rem;
     }
+
+    .game-config {
+      position: absolute;
+      width: 150px;
+      height: auto;
+      padding: 1rem;
+      background-color: black;
+      border-radius: 15px;
+      color: white;
+      left: 0;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+
+    .form-config {
+      display: flex;
+      gap: 1rem;
+      flex-direction: column;
+    }
   </style>
 </head>
 
@@ -52,6 +72,13 @@
       Score:
       <span id="score">0</span>
     </h2>
+  </div>
+  <div class="game-config">
+    <form id="configForm" class="form-config">
+      <label for="col">Number of Cells:</label>
+      <input type="text" id="col" name="col" required>
+      <button type="submit">Configurar</button>
+    </form>
   </div>
   <script>
     (function () {
@@ -102,7 +129,8 @@
         WIN: 'win',
         LOSE_LIVE: 'lose_live',
         GAIN_LIVE: 'gain_live',
-        END_GAME: 'end_game'
+        END_GAME: 'end_game',
+        CHANGE_GAME_BOARD: 'change_game_board'
       };
 
       const EventHandler = (function () {
@@ -119,48 +147,6 @@
       //#endregion
 
       //#region GAME
-
-      // Handle all the event in the game
-      EventHandler.getInstance().subscribe(GAME_EVENTS.WIN, onWinEvent);
-      EventHandler.getInstance().subscribe(GAME_EVENTS.END_GAME, onEndGameEvent);
-      EventHandler.getInstance().subscribe(GAME_EVENTS.GAIN_LIVE, onGainLiveEvent);
-      EventHandler.getInstance().subscribe(GAME_EVENTS.LOSE_LIVE, onLoseLiveEvent);
-
-      function onWinEvent() {
-        setTimeout(() => {
-          alert('You Win!');
-          resetGame();
-        }, 100);
-      }
-
-      function onGainLiveEvent() {
-        if (player.lives < player.maxLives) {
-          player.lives++;
-          if (player.lives > 3) {
-            score += 25; // Add 25 points after the third life
-          }
-          updateHUD();
-          animateText(document.getElementById('lives'));
-        }
-      }
-
-      function onLoseLiveEvent() {
-        player.lives--;
-        score = score - 50 <= 0 ? 0 : score - 50;
-        updateHUD();
-        animateText(document.getElementById('lives'));
-        if (player.lives <= 0) {
-          setTimeout(() => EventHandler.getInstance().notify(GAME_EVENTS.END_GAME), 400);
-        }
-      }
-
-      function onEndGameEvent() {
-        setTimeout(() => {
-          alert('Game Over!');
-          resetGame();
-        }, 100);
-      }
-
       // Canvas setup
       const canvas = document.getElementById('gameCanvas');
       const ctx = canvas.getContext('2d');
@@ -168,7 +154,7 @@
       // Game settings
       const COLS = 10;
       const ROWS = 10;
-      const CELL_SIZE = canvas.width / COLS;
+      let CELL_SIZE = canvas.width / COLS;
 
       // Game variables
       let grid = [];
@@ -176,13 +162,14 @@
       let obstacles = [];
       let lifeItems = [];
       let score = 0; // Add score variable
+      let gridSize = { cols: COLS, rows: ROWS };
 
       // Player properties
       let player = {
         x: 0,
         y: 0,
         size: CELL_SIZE * 0.6,
-        lives: 2,
+        lives: 3,
         maxLives: 5,
       };
 
@@ -245,7 +232,7 @@
             let nx = this.x + dir.x;
             let ny = this.y + dir.y;
 
-            if (nx >= 0 && ny >= 0 && nx < COLS && ny < ROWS) {
+            if (nx >= 0 && ny >= 0 && nx < gridSize.cols && ny < gridSize.rows) {
               let neighbor = grid[ny][nx];
               if (!neighbor.visited) {
                 neighbors.push({ neighbor, dir });
@@ -259,9 +246,9 @@
       // Initialize the grid
       function initGrid() {
         grid = [];
-        for (let y = 0; y < ROWS; y++) {
+        for (let y = 0; y < gridSize.rows; y++) {
           grid[y] = [];
-          for (let x = 0; x < COLS; x++) {
+          for (let x = 0; x < gridSize.cols; x++) {
             grid[y][x] = new Cell(x, y);
           }
         }
@@ -321,7 +308,7 @@
         ctx.fillText('A', CELL_SIZE * 0.2, CELL_SIZE * 0.8);
 
         // Draw "End" text at the end of the maze
-        ctx.fillText('END', (COLS - 1) * CELL_SIZE + CELL_SIZE * 0.2, (ROWS - 1) * CELL_SIZE + CELL_SIZE * 0.8);
+        ctx.fillText('END', (gridSize.cols - 1) * CELL_SIZE + CELL_SIZE * 0.2, (gridSize.rows - 1) * CELL_SIZE + CELL_SIZE * 0.8);
       }
 
       // Draw the player
@@ -345,10 +332,10 @@
         if (e.key === 'ArrowUp' && !cell.walls[0] && player.y > 0) {
           player.y--;
           moved = true;
-        } else if (e.key === 'ArrowRight' && !cell.walls[1] && player.x < COLS - 1) {
+        } else if (e.key === 'ArrowRight' && !cell.walls[1] && player.x < gridSize.cols - 1) {
           player.x++;
           moved = true;
-        } else if (e.key === 'ArrowDown' && !cell.walls[2] && player.y < ROWS - 1) {
+        } else if (e.key === 'ArrowDown' && !cell.walls[2] && player.y < gridSize.rows - 1) {
           player.y++;
           moved = true;
         } else if (e.key === 'ArrowLeft' && !cell.walls[3] && player.x > 0) {
@@ -387,11 +374,11 @@
       function getRandomEmptyCell() {
         let x, y;
         do {
-          x = Math.floor(Math.random() * COLS);
-          y = Math.floor(Math.random() * ROWS);
+          x = Math.floor(Math.random() * gridSize.cols);
+          y = Math.floor(Math.random() * gridSize.rows);
         } while (
           (x === 0 && y === 0) || // Avoid starting position
-          (x === COLS - 1 && y === ROWS - 1) || // Avoid ending position
+          (x === gridSize.cols - 1 && y === gridSize.rows - 1) || // Avoid ending position
           obstacles.some(o => o.x === x && o.y === y) ||
           lifeItems.some(l => l.x === x && l.y === y)
         );
@@ -457,27 +444,28 @@
         }
 
         // Check if reached the end
-        if (player.x === COLS - 1 && player.y === ROWS - 1) {
+        if (player.x === gridSize.cols - 1 && player.y === gridSize.rows - 1) {
           EventHandler.getInstance().notify(GAME_EVENTS.WIN);
         }
       }
 
       // Reset the game
-      function resetGame() {
-        // Reset player position and lives
-        player = {
-          ...player,
-          x: 0,
-          y: 0,
-          lives: 2,
-        };
-
-        // Reset game variables
+      function resetGame(params) {
         grid = [];
         stack = [];
         obstacles = [];
         lifeItems = [];
         score = 0; // Reset score
+        CELL_SIZE = canvas.width / (params?.cols || COLS);
+        gridSize = { cols: params?.cols || COLS, rows: params?.rows || ROWS };
+
+        player = {
+          ...player,
+          x: 0,
+          y: 0,
+          lives: 3,
+          size: CELL_SIZE * 0.6,
+        };
 
         initializeGame();
       }
@@ -505,6 +493,61 @@
       const MIN_NUMBER_ZEROS_LIVES = 2;
       const MIN_NUMBER_ZEROS_SCORE = 4;
       const ALL_NUMBERS = "0123456789";
+
+      document.getElementById('col').value = COLS;
+
+      const form = document.getElementById('configForm');
+      form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        const cols = Number(document.getElementById('col').value);
+        EventHandler.getInstance().notify(GAME_EVENTS.CHANGE_GAME_BOARD, { cols, rows: cols });
+      });
+
+      // Handle all the event in the game
+      EventHandler.getInstance().subscribe(GAME_EVENTS.WIN, onWinEvent);
+      EventHandler.getInstance().subscribe(GAME_EVENTS.END_GAME, onEndGameEvent);
+      EventHandler.getInstance().subscribe(GAME_EVENTS.GAIN_LIVE, onGainLiveEvent);
+      EventHandler.getInstance().subscribe(GAME_EVENTS.LOSE_LIVE, onLoseLiveEvent);
+      EventHandler.getInstance().subscribe(GAME_EVENTS.CHANGE_GAME_BOARD, onChangeGameBoardEvent);
+
+      function onWinEvent() {
+        setTimeout(() => {
+          alert('You Win!');
+          resetGame();
+        }, 100);
+      }
+
+      function onGainLiveEvent() {
+        if (player.lives < player.maxLives) {
+          player.lives++;
+          if (player.lives > 3) {
+            score += 25; // Add 25 points after the third life
+          }
+          updateHUD();
+          animateText(document.getElementById('lives'));
+        }
+      }
+
+      function onLoseLiveEvent() {
+        player.lives--;
+        score = score - 50 <= 0 ? 0 : score - 50;
+        updateHUD();
+        animateText(document.getElementById('lives'));
+        if (player.lives <= 0) {
+          setTimeout(() => EventHandler.getInstance().notify(GAME_EVENTS.END_GAME), 400);
+        }
+      }
+
+      function onEndGameEvent() {
+        setTimeout(() => {
+          alert('Game Over!');
+          resetGame();
+        }, 100);
+      }
+
+      function onChangeGameBoardEvent(params) {
+        resetGame({ cols: params.cols, rows: params.rows });
+      }
 
       function updateHUD() {
         const formatLives = `${formatString(player.lives, MIN_NUMBER_ZEROS_LIVES)}`;
